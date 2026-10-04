@@ -79,7 +79,7 @@ public class OutboxRelay {
     }
 
     /** One locked batch; returns the number of rows published. Package-private for tests. */
-    int relayBatch() {
+    public int relayBatch() {
         Integer count = transaction.execute(status -> {
             List<OutboxMessage> batch = outbox.lockUnpublished(batchSize);
             if (batch.isEmpty()) {
