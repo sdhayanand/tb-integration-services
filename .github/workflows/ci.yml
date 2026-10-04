@@ -43,7 +43,8 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21', cache: maven }
       - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - run: mvn -B -ntp -DskipTests -pl common install
+      # -am also installs the parent pom, which the module build needs to resolve the installed common artifact
+      - run: mvn -B -ntp -DskipTests -pl common -am install
       - run: >
           mvn -B -ntp -DskipTests -pl ${{ matrix.module }} compile jib:build
           -Djib.to.image=${{ env.IMAGE_PREFIX }}/tb-${{ matrix.module }}:${{ github.sha }}

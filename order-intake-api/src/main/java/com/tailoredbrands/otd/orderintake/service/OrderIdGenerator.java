@@ -1,5 +1,6 @@
 package com.tailoredbrands.otd.orderintake.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,8 @@ public class OrderIdGenerator {
     private final LongSupplier sequence;
     private final Clock clock;
 
+    /** Spring constructor; {@code @Autowired} because the class has a second (package-private) constructor for tests. */
+    @Autowired
     public OrderIdGenerator(JdbcClient jdbc, Clock clock) {
         this(() -> jdbc.sql("SELECT nextval('order_seq')").query(Long.class).single(), clock);
     }

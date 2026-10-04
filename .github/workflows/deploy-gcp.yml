@@ -31,7 +31,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21', cache: maven }
-      - run: mvn -B -ntp -DskipTests -pl common install
+      - run: mvn -B -ntp -DskipTests -pl common -am install
       - name: Jib -> Artifact Registry (3 Java services)
         run: |
           for module in order-intake-api inventory-service shipment-webhook; do

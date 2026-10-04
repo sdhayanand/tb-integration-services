@@ -42,6 +42,7 @@
     <springdoc.version>2.8.9</springdoc.version>
     <!-- not in either BOM; see README "unverified coordinates" -->
     <postgres-socket-factory.version>1.25.0</postgres-socket-factory.version>
+    <wsdl4j.version>1.6.3</wsdl4j.version>
 
     <!-- default image name for jib:build; override with -Djib.to.image=... -->
     <jib.to.image>ghcr.io/sdhayanand/tb-${project.artifactId}</jib.to.image>
@@ -83,6 +84,12 @@
         <groupId>com.google.cloud.sql</groupId>
         <artifactId>postgres-socket-factory</artifactId>
         <version>${postgres-socket-factory.version}</version>
+      </dependency>
+      <!-- needed by Spring WS DefaultWsdl11Definition; pinned explicitly so the build does not rely on the Boot BOM managing it -->
+      <dependency>
+        <groupId>wsdl4j</groupId>
+        <artifactId>wsdl4j</artifactId>
+        <version>${wsdl4j.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
