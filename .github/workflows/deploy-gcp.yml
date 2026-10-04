@@ -5,8 +5,8 @@ name: deploy-gcp
 # Requires repo variables GCP_PROJECT_ID, GCP_REGION, GKE_CLUSTER, AR_REPO and secrets
 # GCP_WIF_PROVIDER, GCP_DEPLOYER_SA (set by the tb-platform-infra bootstrap). Every job is guarded.
 on:
-  workflow_dispatch: {}
-  push: { branches: [main] }
+  # On demand (or via tb-platform-infra deploy-all) once the platform exists - pushes only run CI.
+  workflow_dispatch:
 permissions: { contents: read, id-token: write }
 
 env:
