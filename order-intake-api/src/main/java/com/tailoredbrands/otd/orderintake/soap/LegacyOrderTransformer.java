@@ -80,7 +80,9 @@ public class LegacyOrderTransformer {
                 errors.forEach(node -> messages.add(node.asText()));
                 throw new InvalidOrderException(messages);
             }
-            return EventJson.MAPPER.treeToValue(tree, Order.class);
+            // Bind from the JSON text, not the tree: readTree() turns 289.00 into a DoubleNode and
+            // BigDecimal amounts would lose their scale (289.0), which breaks money equality.
+            return EventJson.MAPPER.readValue(json, Order.class);
         } catch (IOException e) {
             throw new InvalidOrderException("transformed legacy order is not a valid canonical order: " + e.getMessage());
         }
