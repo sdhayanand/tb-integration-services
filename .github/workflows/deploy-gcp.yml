@@ -60,7 +60,7 @@ jobs:
           service_account: ${{ secrets.GCP_DEPLOYER_SA }}
       - uses: google-github-actions/setup-gcloud@v2
         with: { install_components: 'gke-gcloud-auth-plugin,kubectl' }
-      - run: gcloud container clusters get-credentials "$CLUSTER" --region "$REGION" --project "$PROJECT_ID"
+      - run: gcloud container clusters get-credentials "$CLUSTER" --region "${{ vars.GKE_LOCATION || 'us-east1' }}" --project "$PROJECT_ID"
       - run: kubectl create namespace otd --dry-run=client -o yaml | kubectl apply -f -
       - name: kubectl apply -k (order-intake-api, inventory-service)
         run: |
