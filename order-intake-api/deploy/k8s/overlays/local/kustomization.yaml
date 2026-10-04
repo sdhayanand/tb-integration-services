@@ -1,0 +1,15 @@
+# Local cluster (kind / minikube / Docker Desktop) with the Pub/Sub emulator running in-cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otd
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/sdhayanand/tb-order-intake-api
+    newTag: latest
+replicas:
+  - name: order-intake-api
+    count: 1
+patches:
+  - path: configmap-patch.yaml
+  - path: service-patch.yaml

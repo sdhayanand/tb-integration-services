@@ -1,0 +1,106 @@
+# inventory-service — env vars per ARCHITECTURE §6:
+#   DB_URL DB_USER DB_PASSWORD CLOUD_SQL_INSTANCE(optional) PUBSUB_PROJECT
+#   ORDERS_SUBSCRIPTION=orders-inventory-service INVENTORY_TOPIC=inventory-v1 PUBSUB_EMULATOR_HOST(local)
+server:
+  port: 8081
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: inventory-service
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/otd}
+    username: ${DB_USER:otd}
+    password: ${DB_PASSWORD:otd}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:8}
+      minimum-idle: 2
+      connection-timeout: 5000
+      pool-name: inventory
+  flyway:
+    # order-intake-api owns db/migration (ARCHITECTURE §5.1); the "schema" health indicator checks V1
+    enabled: false
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+otd:
+  pubsub:
+    project: ${PUBSUB_PROJECT:tb-otd-local}
+    emulator-host: ${PUBSUB_EMULATOR_HOST:}
+    orders-subscription: ${ORDERS_SUBSCRIPTION:orders-inventory-service}
+    inventory-topic: ${INVENTORY_TOPIC:inventory-v1}
+  stock:
+    fallback-location: ${FALLBACK_LOCATION:DC01}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+      group:
+        readiness:
+          include: readinessState,db,schema
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    com.tailoredbrands.otd: INFO
+    com.google.api.gax: WARN
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+otd:
+  pubsub:
+    emulator-host: ${PUBSUB_EMULATOR_HOST:localhost:8085}
+logging:
+  level:
+    com.tailoredbrands.otd: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: gcp
+  datasource:
+    url: ${DB_URL:jdbc:postgresql:///${DB_NAME:otd}?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=${CLOUD_SQL_INSTANCE}}
+otd:
+  pubsub:
+    emulator-host: ""
+management:
+  endpoint:
+    health:
+      show-details: never

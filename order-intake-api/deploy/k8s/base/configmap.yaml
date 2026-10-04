@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-intake-api-config
+data:
+  SPRING_PROFILES_ACTIVE: "gcp"
+  PUBSUB_PROJECT: "set-by-overlay"
+  ORDERS_TOPIC: "orders-v1"
+  INVENTORY_SUBSCRIPTION: "inventory-order-intake"
+  MIGRATION_PHASE: "PUBSUB_PRIMARY"
+  LEGACY_JMS_URL: ""
+  LEGACY_OMS_SOAP_URL: ""
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"

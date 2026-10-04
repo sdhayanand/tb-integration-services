@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-intake-api-config
+data:
+  SPRING_PROFILES_ACTIVE: "local"
+  PUBSUB_PROJECT: "tb-otd-local"
+  PUBSUB_EMULATOR_HOST: "pubsub-emulator.otd.svc.cluster.local:8085"

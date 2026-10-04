@@ -1,0 +1,15 @@
+# Apply with variable substitution (done by .github/workflows/deploy-gcp.yml):
+#   kubectl kustomize order-intake-api/deploy/k8s/overlays/gcp | envsubst '${PROJECT_ID} ${IMAGE_TAG}' | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otd
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/sdhayanand/tb-order-intake-api
+    newName: us-central1-docker.pkg.dev/${PROJECT_ID}/tb-otd/order-intake-api
+    newTag: "${IMAGE_TAG}"
+patches:
+  - path: configmap-patch.yaml
+  - path: serviceaccount-patch.yaml
+  - path: service-patch.yaml

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SubmitOrderRequest xmlns="http://tailoredbrands.com/legacy/oms/v1">
+  <Order>
+    <OrderNbr>MW0412-889213</OrderNbr>
+    <OrderType>T</OrderType>
+    <StoreNbr>0412</StoreNbr>
+    <CustNbr>C-77812</CustNbr>
+    <OrderDate>2026-10-03T22:14:00Z</OrderDate>
+    <PromiseDate>2026-10-10</PromiseDate>
+    <Lines>
+      <Line>
+        <LineNbr>1</LineNbr>
+        <SKU>MW-SUIT-NAVY-42R</SKU>
+        <Qty>1</Qty>
+        <Price>599.99</Price>
+        <FulfillType>P</FulfillType>
+      </Line>
+      <Line>
+        <LineNbr>2</LineNbr>
+        <SKU>ALT-HEM-TROUSER</SKU>
+        <Qty>1</Qty>
+        <Price>50.00</Price>
+        <FulfillType>A</FulfillType>
+        <Alteration>
+          <AltType>HEM</AltType>
+          <Measurement>31.5</Measurement>
+          <TailorShop>TS-EASTBAY</TailorShop>
+        </Alteration>
+      </Line>
+    </Lines>
+  </Order>
+</SubmitOrderRequest>

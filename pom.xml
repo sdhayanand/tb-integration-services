@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.6</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.tailoredbrands.otd</groupId>
+  <artifactId>tb-integration-services</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>tb-integration-services</name>
+  <description>Tailored Brands OTD integration services: order-intake-api, inventory-service, shipment-webhook (+ Python notification-service)</description>
+
+  <modules>
+    <module>common</module>
+    <module>order-intake-api</module>
+    <module>inventory-service</module>
+    <module>shipment-webhook</module>
+  </modules>
+
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- version pins from CONVENTIONS.md -->
+    <libraries-bom.version>26.60.0</libraries-bom.version>
+    <testcontainers-bom.version>1.21.3</testcontainers-bom.version>
+    <jib.version>3.4.5</jib.version>
+    <jaxb2-maven-plugin.version>3.2.0</jaxb2-maven-plugin.version>
+    <surefire.version>3.5.3</surefire.version>
+    <failsafe.version>3.5.3</failsafe.version>
+    <logstash-logback-encoder.version>8.1</logstash-logback-encoder.version>
+    <springdoc.version>2.8.9</springdoc.version>
+    <!-- not in either BOM; see README "unverified coordinates" -->
+    <postgres-socket-factory.version>1.25.0</postgres-socket-factory.version>
+
+    <!-- default image name for jib:build; override with -Djib.to.image=... -->
+    <jib.to.image>ghcr.io/sdhayanand/tb-${project.artifactId}</jib.to.image>
+    <jib.container.port>8080</jib.container.port>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.google.cloud</groupId>
+        <artifactId>libraries-bom</artifactId>
+        <version>${libraries-bom.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers-bom.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.tailoredbrands.otd</groupId>
+        <artifactId>common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.logstash.logback</groupId>
+        <artifactId>logstash-logback-encoder</artifactId>
+        <version>${logstash-logback-encoder.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.cloud.sql</groupId>
+        <artifactId>postgres-socket-factory</artifactId>
+        <version>${postgres-socket-factory.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${surefire.version}</version>
+          <configuration>
+            <!-- unit tests only; *IT classes are run by failsafe -->
+            <excludes>
+              <exclude>**/*IT.java</exclude>
+            </excludes>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${failsafe.version}</version>
+          <configuration>
+            <!-- run against classes, not the repackaged Boot jar -->
+            <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+            <includes>
+              <include>**/*IT.java</include>
+            </includes>
+          </configuration>
+          <executions>
+            <execution>
+              <goals>
+                <goal>integration-test</goal>
+                <goal>verify</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>jaxb2-maven-plugin</artifactId>
+          <version>${jaxb2-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>com.google.cloud.tools</groupId>
+          <artifactId>jib-maven-plugin</artifactId>
+          <version>${jib.version}</version>
+          <configuration>
+            <from>
+              <image>eclipse-temurin:21-jre</image>
+            </from>
+            <to>
+              <image>${jib.to.image}</image>
+              <tags>
+                <tag>latest</tag>
+              </tags>
+            </to>
+            <container>
+              <ports>
+                <port>${jib.container.port}</port>
+              </ports>
+              <user>10001:10001</user>
+              <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
+              <jvmFlags>
+                <jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
+                <jvmFlag>-XX:+ExitOnOutOfMemoryError</jvmFlag>
+                <jvmFlag>-Djava.security.egd=file:/dev/./urandom</jvmFlag>
+              </jvmFlags>
+              <labels>
+                <org.opencontainers.image.source>https://github.com/sdhayanand/tb-integration-services</org.opencontainers.image.source>
+              </labels>
+            </container>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

@@ -1,0 +1,125 @@
+# order-intake-api — env vars per ARCHITECTURE §6:
+#   DB_URL DB_USER DB_PASSWORD CLOUD_SQL_INSTANCE(optional) PUBSUB_PROJECT ORDERS_TOPIC=orders-v1
+#   PUBSUB_EMULATOR_HOST(local) MIGRATION_PHASE LEGACY_JMS_URL(optional) LEGACY_OMS_SOAP_URL
+#   INVENTORY_SUBSCRIPTION=inventory-order-intake
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: order-intake-api
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/otd}
+    username: ${DB_USER:otd}
+    password: ${DB_PASSWORD:otd}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 2
+      connection-timeout: 5000
+      pool-name: order-intake
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  webservices:
+    path: /ws            # SOAP at POST /ws (any path under it), WSDL at /ws/orders.wsdl
+
+otd:
+  pubsub:
+    project: ${PUBSUB_PROJECT:tb-otd-local}
+    emulator-host: ${PUBSUB_EMULATOR_HOST:}
+    orders-topic: ${ORDERS_TOPIC:orders-v1}
+    inventory-subscription: ${INVENTORY_SUBSCRIPTION:inventory-order-intake}
+  outbox:
+    batch-size: 100
+    relay-delay-ms: 500
+  migration:
+    phase: ${MIGRATION_PHASE:PUBSUB_PRIMARY}
+  legacy:
+    jms-url: ${LEGACY_JMS_URL:}
+    jms-user: ${LEGACY_JMS_USER:}
+    jms-password: ${LEGACY_JMS_PASSWORD:}
+    jms-queue: ${LEGACY_JMS_QUEUE:TB.ORDERS.OUT}
+    oms-soap-url: ${LEGACY_OMS_SOAP_URL:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+      group:
+        readiness:
+          include: readinessState,db
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+logging:
+  level:
+    root: INFO
+    com.tailoredbrands.otd: INFO
+    org.springframework.ws: WARN
+    com.google.api.gax: WARN
+
+---
+# ---------- local: docker-compose / Pub/Sub emulator ----------
+spring:
+  config:
+    activate:
+      on-profile: local
+otd:
+  pubsub:
+    emulator-host: ${PUBSUB_EMULATOR_HOST:localhost:8085}
+logging:
+  level:
+    com.tailoredbrands.otd: DEBUG
+
+---
+# ---------- gcp: GKE Autopilot + Cloud SQL (socket factory via Workload Identity) ----------
+spring:
+  config:
+    activate:
+      on-profile: gcp
+  datasource:
+    # When CLOUD_SQL_INSTANCE (project:region:instance) is set, connect through the Cloud SQL Java
+    # connector (no sidecar, IAM via Workload Identity). DB_URL still wins when provided explicitly.
+    url: ${DB_URL:jdbc:postgresql:///${DB_NAME:otd}?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=${CLOUD_SQL_INSTANCE}}
+otd:
+  pubsub:
+    emulator-host: ""
+management:
+  endpoint:
+    health:
+      show-details: never

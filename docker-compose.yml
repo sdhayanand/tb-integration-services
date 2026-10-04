@@ -1,0 +1,159 @@
+# Local dev stack: Postgres + Pub/Sub emulator (+ topology init) + the four services.
+#   docker compose up --build
+#   curl -s localhost:8080/actuator/health | jq .
+# Build context is the repo root for the Java services (shared `common` module).
+name: tb-otd
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: otd
+      POSTGRES_USER: otd
+      POSTGRES_PASSWORD: otd
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U otd -d otd"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: >
+      gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=tb-otd-local
+    ports:
+      - "8085:8085"
+    healthcheck:
+      # the emulator image has no curl; python3 is there for gcloud
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8085/')\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # one-shot: creates the ARCHITECTURE §4 topology in the emulator via its REST API
+  pubsub-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+    environment:
+      PUBSUB: http://pubsub-emulator:8085
+      PROJECT: tb-otd-local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        topic() {  # topic name
+          curl -fsS -X PUT "$$PUBSUB/v1/projects/$$PROJECT/topics/$$1" -o /dev/null -w "topic $$1 -> %{http_code}\n" \
+            || curl -fsS "$$PUBSUB/v1/projects/$$PROJECT/topics/$$1" -o /dev/null -w "topic $$1 exists -> %{http_code}\n"
+        }
+        sub() {    # subscription name, topic, extra json
+          body="{\"topic\":\"projects/$$PROJECT/topics/$$2\",\"ackDeadlineSeconds\":60,\"enableMessageOrdering\":true$$3}"
+          curl -fsS -X PUT -H 'Content-Type: application/json' -d "$$body" \
+            "$$PUBSUB/v1/projects/$$PROJECT/subscriptions/$$1" -o /dev/null -w "subscription $$1 -> %{http_code}\n" \
+            || curl -fsS "$$PUBSUB/v1/projects/$$PROJECT/subscriptions/$$1" -o /dev/null -w "subscription $$1 exists -> %{http_code}\n"
+        }
+        topic orders-v1
+        topic inventory-v1
+        topic shipments-v1
+        topic events-dlq
+        topic migration-control
+        # no schemas, dead-letter policies or filters in the emulator (ARCHITECTURE §4: names only)
+        sub orders-inventory-service orders-v1 ""
+        sub orders-dataflow orders-v1 ""
+        sub orders-to-legacy-mq orders-v1 ""
+        sub orders-bq-archive orders-v1 ""
+        sub inventory-dataflow inventory-v1 ""
+        sub inventory-order-intake inventory-v1 ""
+        sub shipments-dataflow shipments-v1 ""
+        sub shipments-notification shipments-v1 ",\"pushConfig\":{\"pushEndpoint\":\"http://notification-service:8080/push/shipments\"}"
+        sub events-dlq-monitor events-dlq ""
+        sub migration-control-bridges migration-control ""
+        echo "pubsub topology ready"
+
+  order-intake-api:
+    build:
+      context: .
+      dockerfile: order-intake-api/Dockerfile
+    image: ghcr.io/sdhayanand/tb-order-intake-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pubsub-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/otd
+      DB_USER: otd
+      DB_PASSWORD: otd
+      PUBSUB_PROJECT: tb-otd-local
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      ORDERS_TOPIC: orders-v1
+      INVENTORY_SUBSCRIPTION: inventory-order-intake
+      MIGRATION_PHASE: ${MIGRATION_PHASE:-PUBSUB_PRIMARY}
+      LEGACY_JMS_URL: ${LEGACY_JMS_URL:-}          # e.g. tcp://ems-broker:61616 with tb-legacy-simulators
+      LEGACY_OMS_SOAP_URL: ${LEGACY_OMS_SOAP_URL:-}
+    ports:
+      - "8080:8080"
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: inventory-service/Dockerfile
+    image: ghcr.io/sdhayanand/tb-inventory-service:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pubsub-init:
+        condition: service_completed_successfully
+      order-intake-api:
+        condition: service_healthy   # it owns the Flyway migrations
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/otd
+      DB_USER: otd
+      DB_PASSWORD: otd
+      PUBSUB_PROJECT: tb-otd-local
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      ORDERS_SUBSCRIPTION: orders-inventory-service
+      INVENTORY_TOPIC: inventory-v1
+    ports:
+      - "8081:8081"
+
+  shipment-webhook:
+    build:
+      context: .
+      dockerfile: shipment-webhook/Dockerfile
+    image: ghcr.io/sdhayanand/tb-shipment-webhook:local
+    depends_on:
+      pubsub-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      PUBSUB_PROJECT: tb-otd-local
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      SHIPMENTS_TOPIC: shipments-v1
+      WEBHOOK_SHARED_SECRET: ${WEBHOOK_SHARED_SECRET:-local-dev-secret}
+    ports:
+      - "8082:8080"
+
+  notification-service:
+    build:
+      context: notification-service
+    image: ghcr.io/sdhayanand/tb-notification-service:local
+    depends_on:
+      pubsub-init:
+        condition: service_completed_successfully
+    environment:
+      PUSH_AUDIENCE: ""          # empty = no OIDC verification (local only)
+      NOTIFY_MODE: log
+      LOG_JSON: "false"
+    ports:
+      - "8083:8080"
+
+volumes:
+  pgdata: {}

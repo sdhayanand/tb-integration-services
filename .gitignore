@@ -1,0 +1,27 @@
+# Maven
+target/
+*.jar
+!.mvn/wrapper/*.jar
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# Python
+notification-service/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS / misc
+.DS_Store
+*.log
+*.env
+.env.*
+!.env.example

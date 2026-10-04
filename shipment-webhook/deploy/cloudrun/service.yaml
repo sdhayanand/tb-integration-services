@@ -1,0 +1,62 @@
+# Knative Serving manifest for Cloud Run (deployed by deploy-gcp.yml with
+#   envsubst '${PROJECT_ID} ${IMAGE_TAG}' < service.yaml | gcloud run services replace - --region us-central1)
+# Ingress is public (carriers call it) but every request must carry a valid X-Carrier-Signature.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: shipment-webhook
+  labels:
+    app.kubernetes.io/part-of: tb-otd
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/description: "Carrier (UPS/FedEx) tracking webhooks -> Pub/Sub shipments-v1"
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: shipment-webhook@${PROJECT_ID}.iam.gserviceaccount.com
+      containerConcurrency: 80
+      timeoutSeconds: 30
+      containers:
+        - image: us-central1-docker.pkg.dev/${PROJECT_ID}/tb-otd/shipment-webhook:${IMAGE_TAG}
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: gcp
+            - name: PUBSUB_PROJECT
+              value: ${PROJECT_ID}
+            - name: SHIPMENTS_TOPIC
+              value: shipments-v1
+            - name: WEBHOOK_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: webhook-shared-secret   # Secret Manager secret created by tb-platform-infra
+                  key: latest
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -XX:TieredStopAtLevel=1"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 30
+  traffic:
+    - percent: 100
+      latestRevision: true

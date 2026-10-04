@@ -1,0 +1,82 @@
+# shipment-webhook (Cloud Run) — env vars per ARCHITECTURE §6:
+#   PUBSUB_PROJECT SHIPMENTS_TOPIC=shipments-v1 WEBHOOK_SHARED_SECRET PUBSUB_EMULATOR_HOST(local)
+server:
+  port: ${PORT:8080}        # Cloud Run injects PORT
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+  max-http-request-header-size: 16KB
+
+spring:
+  application:
+    name: shipment-webhook
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+otd:
+  pubsub:
+    project: ${PUBSUB_PROJECT:tb-otd-local}
+    emulator-host: ${PUBSUB_EMULATOR_HOST:}
+    shipments-topic: ${SHIPMENTS_TOPIC:shipments-v1}
+  webhook:
+    shared-secret: ${WEBHOOK_SHARED_SECRET:}
+    allow-unsigned: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    com.tailoredbrands.otd: INFO
+    com.google.api.gax: WARN
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+otd:
+  pubsub:
+    emulator-host: ${PUBSUB_EMULATOR_HOST:localhost:8085}
+  webhook:
+    allow-unsigned: true   # only when WEBHOOK_SHARED_SECRET is also empty
+logging:
+  level:
+    com.tailoredbrands.otd: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: gcp
+otd:
+  pubsub:
+    emulator-host: ""

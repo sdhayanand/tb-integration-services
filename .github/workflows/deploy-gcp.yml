@@ -1,0 +1,106 @@
+name: deploy-gcp
+# Builds images into Artifact Registry and deploys:
+#   order-intake-api, inventory-service -> GKE Autopilot (kustomize overlays/gcp, namespace otd)
+#   shipment-webhook, notification-service -> Cloud Run
+# Requires repo variables GCP_PROJECT_ID, GCP_REGION, GKE_CLUSTER, AR_REPO and secrets
+# GCP_WIF_PROVIDER, GCP_DEPLOYER_SA (set by the tb-platform-infra bootstrap). Every job is guarded.
+on:
+  workflow_dispatch: {}
+  push: { branches: [main] }
+permissions: { contents: read, id-token: write }
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  CLUSTER: ${{ vars.GKE_CLUSTER || 'tb-otd-autopilot' }}
+  AR_REPO: ${{ vars.AR_REPO || 'tb-otd' }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  images:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21', cache: maven }
+      - run: mvn -B -ntp -DskipTests -pl common install
+      - name: Jib -> Artifact Registry (3 Java services)
+        run: |
+          for module in order-intake-api inventory-service shipment-webhook; do
+            mvn -B -ntp -DskipTests -pl "$module" compile jib:build \
+              -Djib.to.image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${module}:${IMAGE_TAG}" \
+              -Djib.to.tags=latest \
+              -Djib.to.auth.username=oauth2accesstoken \
+              -Djib.to.auth.password='${{ steps.auth.outputs.access_token }}'
+          done
+      - name: notification-service -> Artifact Registry
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/notification-service"
+          docker build notification-service -t "${IMAGE}:${IMAGE_TAG}" -t "${IMAGE}:latest"
+          docker push --all-tags "${IMAGE}"
+
+  gke:
+    if: vars.GCP_PROJECT_ID != ''
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with: { install_components: 'gke-gcloud-auth-plugin,kubectl' }
+      - run: gcloud container clusters get-credentials "$CLUSTER" --region "$REGION" --project "$PROJECT_ID"
+      - run: kubectl create namespace otd --dry-run=client -o yaml | kubectl apply -f -
+      - name: kubectl apply -k (order-intake-api, inventory-service)
+        run: |
+          for module in order-intake-api inventory-service; do
+            kubectl kustomize "${module}/deploy/k8s/overlays/gcp" \
+              | envsubst '${PROJECT_ID} ${IMAGE_TAG}' \
+              | kubectl apply -n otd -f -
+          done
+      - run: |
+          kubectl -n otd rollout status deployment/order-intake-api --timeout=300s
+          kubectl -n otd rollout status deployment/inventory-service --timeout=300s
+
+  cloudrun:
+    if: vars.GCP_PROJECT_ID != ''
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: gcloud run deploy shipment-webhook
+        run: |
+          gcloud run deploy shipment-webhook \
+            --project "$PROJECT_ID" --region "$REGION" --platform managed \
+            --image "${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/shipment-webhook:${IMAGE_TAG}" \
+            --service-account "shipment-webhook@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --port 8080 --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 80 --timeout 30 \
+            --allow-unauthenticated \
+            --set-env-vars "SPRING_PROFILES_ACTIVE=gcp,PUBSUB_PROJECT=${PROJECT_ID},SHIPMENTS_TOPIC=shipments-v1" \
+            --set-secrets "WEBHOOK_SHARED_SECRET=webhook-shared-secret:latest"
+      - name: gcloud run deploy notification-service
+        run: |
+          PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+          gcloud run deploy notification-service \
+            --project "$PROJECT_ID" --region "$REGION" --platform managed \
+            --image "${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/notification-service:${IMAGE_TAG}" \
+            --service-account "notification-service@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --port 8080 --min-instances 0 --max-instances 3 --cpu 1 --memory 256Mi --concurrency 40 --timeout 30 \
+            --no-allow-unauthenticated \
+            --set-env-vars "PUSH_AUDIENCE=https://notification-service-${PROJECT_NUMBER}.${REGION}.run.app,PUSH_SERVICE_ACCOUNT=pubsub-push@${PROJECT_ID}.iam.gserviceaccount.com,NOTIFY_MODE=log,LOG_JSON=true"

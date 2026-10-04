@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-service-config
+data:
+  SPRING_PROFILES_ACTIVE: "gcp"
+  PUBSUB_PROJECT: "set-by-overlay"
+  ORDERS_SUBSCRIPTION: "orders-inventory-service"
+  INVENTORY_TOPIC: "inventory-v1"
+  FALLBACK_LOCATION: "DC01"
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
