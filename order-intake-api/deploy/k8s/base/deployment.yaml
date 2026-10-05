@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: order-intake-api
 spec:
-  replicas: 2
+  replicas: 1   # demo project has a 12-vCPU quota; HPA scales out under load
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
